@@ -7,6 +7,7 @@ class ServiceType(str, Enum):
     YANDEX_MUSIC = "yandex_music"
     SPOTIFY = "spotify"
     VK_MUSIC = "vk_music"
+    VK = "vk"
 
 
 class TrackBaseInfo(BaseModel):

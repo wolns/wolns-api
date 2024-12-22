@@ -19,6 +19,11 @@ class YandexMusicSettings(EnvSettings):
     yandex_music_redirect_uri: str
 
 
+class VKSettings(BaseSettings):
+    vk_client_id: str
+    vk_redirect_uri: str
+
+
 class JWTSettings(EnvSettings):
     jwt_secret: str
     jwt_algorithm: str = "HS256"
@@ -106,3 +111,7 @@ def get_spotify_settings():
 
 def get_yandex_music_settings():
     return YandexMusicSettings()
+
+
+def get_vk_settings() -> VKSettings:
+    return VKSettings()
