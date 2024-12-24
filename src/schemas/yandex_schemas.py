@@ -12,3 +12,7 @@ class YandexMusicRefreshTokenSchema(BaseModel):
 class YandexMusicCallbackResponseSchema(BaseModel):
     access_token: str
     refresh_token: str
+
+
+class YandexMusicTestSchema(BaseModel):
+    access_token: str
