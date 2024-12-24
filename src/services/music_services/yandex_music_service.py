@@ -1,32 +1,42 @@
-import base64
+from typing import Optional
+
+import aiohttp
 import json
 import random
 import string
-
-import aiohttp
-from fastapi import HTTPException
 from yandex_music import ClientAsync
 
 from src.core.config import get_yandex_music_settings
 from src.core.exceptions import TokenExpiredException
 from src.schemas.account_schemas import YandexMusicAccountBodySchema
 from src.schemas.track_schemas import ServiceType, TrackBaseInfo
-from src.services.music_service import MusicService
 from src.schemas.yandex_schemas import YandexMusicTestSchema
+from src.services.music_service import MusicService
+from src.services.music_services.base_oauth2_service import BaseOAuth2Service
 
 
-class YandexMusicService(MusicService):
+class YandexMusicService(MusicService, BaseOAuth2Service):
+    """Service for interacting with Yandex Music API"""
+    
     service_type = ServiceType.YANDEX_MUSIC
 
+    @property
+    def scope(self) -> str:
+        return ""
+
     def __init__(self):
-        yandex_music_settings = get_yandex_music_settings()
-        self.client_id = yandex_music_settings.yandex_music_client_id
-        self.client_secret = yandex_music_settings.yandex_music_client_secret
-        self.redirect_uri = yandex_music_settings.yandex_music_redirect_uri
-        self.auth_url = "https://oauth.yandex.ru/authorize"
-        self.token_url = "https://oauth.yandex.ru/token"
+        settings = get_yandex_music_settings()
+        BaseOAuth2Service.__init__(
+            self,
+            client_id=settings.yandex_music_client_id,
+            client_secret=settings.yandex_music_client_secret,
+            redirect_uri=settings.yandex_music_redirect_uri,
+            auth_url="https://oauth.yandex.ru/authorize",
+            token_url="https://oauth.yandex.ru/token",
+        )
 
     def get_auth_url(self) -> str:
+        """Override base method since Yandex doesn't use scope"""
         return (
             f"{self.auth_url}"
             f"?response_type=code"
@@ -35,79 +45,25 @@ class YandexMusicService(MusicService):
         )
 
     async def get_tokens(self, code: str) -> YandexMusicAccountBodySchema:
-        auth_header = base64.b64encode(f"{self.client_id}:{self.client_secret}".encode()).decode()
-
-        headers = {
-            "Authorization": f"Basic {auth_header}",
-            "Content-Type": "application/x-www-form-urlencoded",
-        }
-
+        """Exchange authorization code for access and refresh tokens"""
         data = {
             "grant_type": "authorization_code",
             "code": code,
         }
-
-        async with aiohttp.ClientSession() as session:
-            async with session.post(self.token_url, headers=headers, data=data) as response:
-                if response.status != 200:
-                    raise HTTPException(status_code=400, detail="Failed to get tokens")
-                return YandexMusicAccountBodySchema.model_validate(await response.json())
+        response_data = await self._make_token_request(data, "Failed to get tokens")
+        return YandexMusicAccountBodySchema.model_validate(response_data)
 
     async def refresh_tokens(self, refresh_token: str) -> YandexMusicAccountBodySchema:
-        auth_header = base64.b64encode(f"{self.client_id}:{self.client_secret}".encode()).decode()
-
-        headers = {
-            "Authorization": f"Basic {auth_header}",
-            "Content-Type": "application/x-www-form-urlencoded",
-        }
-
+        """Refresh access token using refresh token"""
         data = {
             "grant_type": "refresh_token",
             "refresh_token": refresh_token,
         }
+        response_data = await self._make_token_request(data, "Failed to refresh tokens")
+        return YandexMusicAccountBodySchema.model_validate(response_data)
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(self.token_url, headers=headers, data=data) as response:
-                if response.status != 200:
-                    raise HTTPException(status_code=400, detail="Failed to refresh tokens")
-                return YandexMusicAccountBodySchema.model_validate(await response.json())
-
-    # TODO: rewrite
-    async def track_from_ynison(self, yandex_music_client: ClientAsync, ynison):
-        try:
-            track = ynison["player_state"]["player_queue"]["playable_list"][
-                ynison["player_state"]["player_queue"]["current_playable_index"]
-            ]
-        except IndexError:
-            return {
-                "paused": None,
-                "duration_ms": None,
-                "progress_ms": None,
-                "entity_id": None,
-                "entity_type": None,
-                "track": None,
-            }
-        try:
-            return {
-                "paused": ynison["player_state"]["status"]["paused"],
-                "duration_ms": ynison["player_state"]["status"]["duration_ms"],
-                "progress_ms": ynison["player_state"]["status"]["progress_ms"],
-                "entity_id": ynison["player_state"]["player_queue"]["entity_id"],
-                "entity_type": ynison["player_state"]["player_queue"]["entity_type"],
-                "track": (await yandex_music_client.tracks(track["playable_id"]))[0],
-            }
-        except Exception as e:
-            print(f"exception {e}, track-id {track['playable_id']}")
-            return {
-                "paused": ynison["player_state"]["status"]["paused"],
-                "duration_ms": ynison["player_state"]["status"]["duration_ms"],
-                "progress_ms": ynison["player_state"]["status"]["progress_ms"],
-                "entity_id": ynison["player_state"]["player_queue"]["entity_id"],
-                "entity_type": ynison["player_state"]["player_queue"]["entity_type"],
-                "track": None,
-            }
-
-    async def get_preynison(self, yandex_music_token: str):
+    async def _get_preynison(self, access_token: str):
+        """Get pre-ynison data for websocket connection"""
         device_info = {
             "app_name": "Chrome",
             "type": 1,
@@ -124,18 +80,22 @@ class YandexMusicService(MusicService):
             headers={
                 "Sec-WebSocket-Protocol": f"Bearer, v2, {json.dumps(ws_proto)}",
                 "Origin": "http://music.yandex.ru",
-                "Authorization": f"OAuth {yandex_music_token}",
+                "Authorization": f"OAuth {access_token}",
             },
         )
         recv = await ws.receive()
         data = json.loads(recv.data)
 
-        new_ws_proto = ws_proto.copy()
         if not data["redirect_ticket"]:
             raise TokenExpiredException
-        new_ws_proto["Ynison-Redirect-Ticket"] = data["redirect_ticket"]
 
-        to_send = {
+        new_ws_proto = {**ws_proto, "Ynison-Redirect-Ticket": data["redirect_ticket"]}
+        
+        return session, self._get_initial_state(ws_proto["Ynison-Device-Id"]), data["host"], json.dumps(new_ws_proto)
+
+    def _get_initial_state(self, device_id: str) -> dict:
+        """Get initial state for Ynison websocket"""
+        return {
             "update_full_state": {
                 "player_state": {
                     "player_queue": {
@@ -146,7 +106,7 @@ class YandexMusicService(MusicService):
                         "options": {"repeat_mode": "NONE"},
                         "entity_context": "BASED_ON_ENTITY_BY_DEFAULT",
                         "version": {
-                            "device_id": ws_proto["Ynison-Device-Id"],
+                            "device_id": device_id,
                             "version": 9021243204784341000,
                             "timestamp_ms": 0,
                         },
@@ -158,7 +118,7 @@ class YandexMusicService(MusicService):
                         "playback_speed": 1,
                         "progress_ms": 0,
                         "version": {
-                            "device_id": ws_proto["Ynison-Device-Id"],
+                            "device_id": device_id,
                             "version": 8321822175199937000,
                             "timestamp_ms": 0,
                         },
@@ -171,7 +131,7 @@ class YandexMusicService(MusicService):
                         "volume_granularity": 16,
                     },
                     "info": {
-                        "device_id": ws_proto["Ynison-Device-Id"],
+                        "device_id": device_id,
                         "type": "WEB",
                         "title": "Chrome Browser",
                         "app_name": "Chrome",
@@ -186,40 +146,66 @@ class YandexMusicService(MusicService):
             "activity_interception_type": "DO_NOT_INTERCEPT_BY_DEFAULT",
         }
 
-        return session, to_send, data["host"], json.dumps(new_ws_proto)
+    async def get_current_track(self, obj: YandexMusicAccountBodySchema | YandexMusicTestSchema) -> Optional[TrackBaseInfo]:
+        """Get user's currently playing track"""
+        session, to_send, host, proto = await self._get_preynison(obj.access_token)
+        
+        try:
+            async with session.ws_connect(
+                url=f"wss://{host}/ynison_state.YnisonStateService/PutYnisonState",
+                headers={
+                    "Sec-WebSocket-Protocol": f"Bearer, v2, {proto}",
+                    "Origin": "http://music.yandex.ru",
+                    "Authorization": f"OAuth {obj.access_token}",
+                },
+                method="GET",
+            ) as ws:
+                await ws.send_str(json.dumps(to_send))
+                recv = await ws.receive()
+                ynison = json.loads(recv.data)
 
-    async def get_current_track(self, obj: YandexMusicAccountBodySchema | YandexMusicTestSchema) -> TrackBaseInfo | None:
-        session, to_send, host, proto = await self.get_preynison(obj.access_token)
-        async with session.ws_connect(
-            url=f"wss://{host}/ynison_state.YnisonStateService/PutYnisonState",
-            headers={
-                "Sec-WebSocket-Protocol": f"Bearer, v2, {proto}",
-                "Origin": "http://music.yandex.ru",
-                "Authorization": f"OAuth {obj.access_token}",
-            },
-            method="GET",
-        ) as ws:
-            await ws.send_str(json.dumps(to_send))
-            recv = await ws.receive()
+                yandex_music_client = ClientAsync(token=obj.access_token)
+                await yandex_music_client.init()
+                
+                return await self._parse_track_data(yandex_music_client, ynison)
+        finally:
             await session.close()
-            ynison = json.loads(recv.data)
-            yandex_music_client = ClientAsync(token=obj.access_token)
-            await yandex_music_client.init()
-            track = await self.track_from_ynison(yandex_music_client, ynison)
 
-            if not track or not track["track"]:
-                return None
+    async def _parse_track_data(self, client: ClientAsync, ynison: dict) -> Optional[TrackBaseInfo]:
+        """Parse track data from Ynison response"""
+        track_data = await self._get_track_from_ynison(client, ynison)
+        
+        if not track_data or not track_data["track"] or track_data["paused"]:
+            return None
 
-            if track["paused"]:
-                return None
+        return TrackBaseInfo(
+            title=track_data["track"].title,
+            artists=", ".join(x.name for x in track_data["track"].artists),
+            cover="https://" + track_data["track"].cover_uri.replace("%%", "400x400"),
+            duration_ms=track_data["duration_ms"],
+            progress_ms=track_data["progress_ms"],
+        )
 
-            return TrackBaseInfo(
-                title=track["track"].title,
-                artists=", ".join(x.name for x in track["track"].artists),
-                cover="https://" + track["track"].cover_uri.replace("%%", "400x400"),
-                duration_ms=track["duration_ms"],
-                progress_ms=track["progress_ms"],
-            )
+    async def _get_track_from_ynison(self, client: ClientAsync, ynison: dict) -> Optional[dict]:
+        """Extract track information from Ynison data"""
+        try:
+            queue = ynison["player_state"]["player_queue"]
+            track = queue["playable_list"][queue["current_playable_index"]]
+            
+            track_info = (await client.tracks(track["playable_id"]))[0]
+            
+            return {
+                "paused": ynison["player_state"]["status"]["paused"],
+                "duration_ms": ynison["player_state"]["status"]["duration_ms"],
+                "progress_ms": ynison["player_state"]["status"]["progress_ms"],
+                "entity_id": queue["entity_id"],
+                "entity_type": queue["entity_type"],
+                "track": track_info,
+            }
+        except (IndexError, Exception) as e:
+            if not isinstance(e, IndexError):
+                print(f"Exception {e}, track-id {track['playable_id']}")
+            return None
 
 
 async def get_yandex_music_service() -> YandexMusicService:
