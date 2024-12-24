@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, Query
 from src.schemas.account_schemas import SpotifyAccountBodySchema
 from src.schemas.spotify_schemas import (
     SpotifyAuthResponseSchema,
+    CurrentTrackResponseSchema,
 )
 from src.schemas.track_schemas import TrackBaseInfo
 from src.services.music_services.spotify_service import SpotifyService, get_spotify_service
@@ -26,7 +27,12 @@ async def spotify_callback(
 # TEST PURPOSES ONLY
 @spotify_router.get("/current-track")
 async def get_current_track(
-    access_token: str = Query(...), spotify_service: SpotifyService = Depends(get_spotify_service)
-) -> TrackBaseInfo:
+    access_token: str = Query(...), 
+    spotify_service: SpotifyService = Depends(get_spotify_service)
+) -> CurrentTrackResponseSchema:
     test = SpotifyAccountBodySchema(access_token=access_token, refresh_token=access_token)
-    return await spotify_service.get_current_track(test)
+    track = await spotify_service.get_current_track(test)
+    return CurrentTrackResponseSchema(
+        track=track,
+        is_playing=track is not None
+    )
