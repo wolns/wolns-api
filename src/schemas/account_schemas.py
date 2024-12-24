@@ -17,3 +17,11 @@ class SpotifyAccountBodySchema(AccountBodySchema):
 
 class VkMusicAccountBodySchema(AccountBodySchema):
     access_token: str
+
+
+class VKAccountBodySchema(BaseModel):
+    access_token: str
+    refresh_token: str
+    user_id: int
+    expires_in: int | None = None
+    email: str | None = None
