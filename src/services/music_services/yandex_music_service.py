@@ -13,6 +13,7 @@ from src.schemas.track_schemas import ServiceType, TrackBaseInfo
 from src.schemas.yandex_schemas import YandexMusicTestSchema
 from src.services.music_service import MusicService
 from src.services.music_services.base_oauth2_service import BaseOAuth2Service
+from src.services.music_services.yandex_ynison_protocol import YnisonProtocol
 
 
 class YandexMusicService(MusicService, BaseOAuth2Service):
@@ -22,12 +23,13 @@ class YandexMusicService(MusicService, BaseOAuth2Service):
 
     @property
     def scope(self) -> str:
+        """Override base method since Yandex doesn't use scope"""
         return ""
 
     def __init__(self):
         settings = get_yandex_music_settings()
-        BaseOAuth2Service.__init__(
-            self,
+        self.ynison = YnisonProtocol()
+        super().__init__(
             client_id=settings.yandex_music_client_id,
             client_secret=settings.yandex_music_client_secret,
             redirect_uri=settings.yandex_music_redirect_uri,
@@ -46,105 +48,42 @@ class YandexMusicService(MusicService, BaseOAuth2Service):
 
     async def get_tokens(self, code: str) -> YandexMusicAccountBodySchema:
         """Exchange authorization code for access and refresh tokens"""
-        data = {
-            "grant_type": "authorization_code",
-            "code": code,
-        }
+        data = {"grant_type": "authorization_code", "code": code}
         response_data = await self._make_token_request(data, "Failed to get tokens")
         return YandexMusicAccountBodySchema.model_validate(response_data)
 
     async def refresh_tokens(self, refresh_token: str) -> YandexMusicAccountBodySchema:
         """Refresh access token using refresh token"""
-        data = {
-            "grant_type": "refresh_token",
-            "refresh_token": refresh_token,
-        }
+        data = {"grant_type": "refresh_token", "refresh_token": refresh_token}
         response_data = await self._make_token_request(data, "Failed to refresh tokens")
         return YandexMusicAccountBodySchema.model_validate(response_data)
 
     async def _get_preynison(self, access_token: str):
         """Get pre-ynison data for websocket connection"""
-        device_info = {
-            "app_name": "Chrome",
-            "type": 1,
-        }
-
-        ws_proto = {
-            "Ynison-Device-Id": "".join([random.choice(string.ascii_lowercase) for _ in range(16)]),
-            "Ynison-Device-Info": json.dumps(device_info),
-        }
-
+        device_id = self.ynison.generate_device_id()
+        ws_proto, proto_str = self.ynison.create_websocket_protocol(device_id)
+        
         session = aiohttp.ClientSession()
         ws = await session.ws_connect(
-            url="wss://ynison.music.yandex.ru/redirector.YnisonRedirectService/GetRedirectToYnison",
+            url=self.ynison.YNISON_REDIRECT_URL,
             headers={
-                "Sec-WebSocket-Protocol": f"Bearer, v2, {json.dumps(ws_proto)}",
-                "Origin": "http://music.yandex.ru",
+                "Sec-WebSocket-Protocol": f"Bearer, v2, {proto_str}",
+                "Origin": self.ynison.ORIGIN,
                 "Authorization": f"OAuth {access_token}",
             },
         )
-        recv = await ws.receive()
-        data = json.loads(recv.data)
-
-        if not data["redirect_ticket"]:
-            raise TokenExpiredException
-
-        new_ws_proto = {**ws_proto, "Ynison-Redirect-Ticket": data["redirect_ticket"]}
         
-        return session, self._get_initial_state(ws_proto["Ynison-Device-Id"]), data["host"], json.dumps(new_ws_proto)
+        try:
+            recv = await ws.receive()
+            data = json.loads(recv.data)
 
-    def _get_initial_state(self, device_id: str) -> dict:
-        """Get initial state for Ynison websocket"""
-        return {
-            "update_full_state": {
-                "player_state": {
-                    "player_queue": {
-                        "current_playable_index": -1,
-                        "entity_id": "",
-                        "entity_type": "VARIOUS",
-                        "playable_list": [],
-                        "options": {"repeat_mode": "NONE"},
-                        "entity_context": "BASED_ON_ENTITY_BY_DEFAULT",
-                        "version": {
-                            "device_id": device_id,
-                            "version": 9021243204784341000,
-                            "timestamp_ms": 0,
-                        },
-                        "from_optional": "",
-                    },
-                    "status": {
-                        "duration_ms": 0,
-                        "paused": True,
-                        "playback_speed": 1,
-                        "progress_ms": 0,
-                        "version": {
-                            "device_id": device_id,
-                            "version": 8321822175199937000,
-                            "timestamp_ms": 0,
-                        },
-                    },
-                },
-                "device": {
-                    "capabilities": {
-                        "can_be_player": True,
-                        "can_be_remote_controller": False,
-                        "volume_granularity": 16,
-                    },
-                    "info": {
-                        "device_id": device_id,
-                        "type": "WEB",
-                        "title": "Chrome Browser",
-                        "app_name": "Chrome",
-                    },
-                    "volume_info": {"volume": 0},
-                    "is_shadow": True,
-                },
-                "is_currently_active": False,
-            },
-            "rid": "ac281c26-a047-4419-ad00-e4fbfda1cba3",
-            "player_action_timestamp_ms": 0,
-            "activity_interception_type": "DO_NOT_INTERCEPT_BY_DEFAULT",
-        }
+            if not data["redirect_ticket"]:
+                raise TokenExpiredException
+
+            new_ws_proto = {**ws_proto, "Ynison-Redirect-Ticket": data["redirect_ticket"]}
+            return session, self.ynison.get_initial_state(device_id), data["host"], json.dumps(new_ws_proto)
+        finally:
+            await ws.close()
 
     async def get_current_track(self, obj: YandexMusicAccountBodySchema | YandexMusicTestSchema) -> Optional[TrackBaseInfo]:
         """Get user's currently playing track"""
@@ -155,7 +94,7 @@ class YandexMusicService(MusicService, BaseOAuth2Service):
                 url=f"wss://{host}/ynison_state.YnisonStateService/PutYnisonState",
                 headers={
                     "Sec-WebSocket-Protocol": f"Bearer, v2, {proto}",
-                    "Origin": "http://music.yandex.ru",
+                    "Origin": self.ynison.ORIGIN,
                     "Authorization": f"OAuth {obj.access_token}",
                 },
                 method="GET",
@@ -164,10 +103,10 @@ class YandexMusicService(MusicService, BaseOAuth2Service):
                 recv = await ws.receive()
                 ynison = json.loads(recv.data)
 
-                yandex_music_client = ClientAsync(token=obj.access_token)
-                await yandex_music_client.init()
+                client = ClientAsync(token=obj.access_token)
+                await client.init()
                 
-                return await self._parse_track_data(yandex_music_client, ynison)
+                return await self._parse_track_data(client, ynison)
         finally:
             await session.close()
 
@@ -203,8 +142,6 @@ class YandexMusicService(MusicService, BaseOAuth2Service):
                 "track": track_info,
             }
         except (IndexError, Exception) as e:
-            if not isinstance(e, IndexError):
-                print(f"Exception {e}, track-id {track['playable_id']}")
             return None
 
 
