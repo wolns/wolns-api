@@ -106,5 +106,36 @@ services:
       while :; do sleep 6h & wait $${!}; certbot renew; done"
     restart: always
 
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: wolns-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus:/etc/prometheus
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    restart: always
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: wolns-grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+    depends_on:
+      - prometheus
+    restart: always
+
 volumes:
   wolns-postgres-data:
+  prometheus_data:
+  grafana_data:
