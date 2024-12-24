@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Query
 
 from src.schemas.account_schemas import YandexMusicAccountBodySchema
 from src.schemas.track_schemas import TrackBaseInfo
-from src.schemas.yandex_schemas import YandexMusicAuthResponseSchema, YandexMusicCallbackResponseSchema
+from src.schemas.yandex_schemas import YandexMusicAuthResponseSchema, YandexMusicCallbackResponseSchema, YandexMusicTestSchema
 from src.services.music_services.yandex_music_service import YandexMusicService, get_yandex_music_service
 
 yandex_music_router = APIRouter(prefix="/yandex_music", tags=["Yandex Music"])
@@ -13,8 +13,8 @@ yandex_music_router = APIRouter(prefix="/yandex_music", tags=["Yandex Music"])
 async def get_current_track(
     access_token: str = Query(...), yandex_music_service: YandexMusicService = Depends(get_yandex_music_service)
 ) -> TrackBaseInfo:
-    test = YandexMusicAccountBodySchema(token=access_token)
-    return await yandex_music_service.get_current_track(test)
+    account = YandexMusicTestSchema(access_token=access_token)
+    return await yandex_music_service.get_current_track(account)
 
 @yandex_music_router.get("/login", response_model=YandexMusicAuthResponseSchema)
 async def yandex_music_login(

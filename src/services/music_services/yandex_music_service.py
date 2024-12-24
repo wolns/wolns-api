@@ -12,6 +12,7 @@ from src.core.exceptions import TokenExpiredException
 from src.schemas.account_schemas import YandexMusicAccountBodySchema
 from src.schemas.track_schemas import ServiceType, TrackBaseInfo
 from src.services.music_service import MusicService
+from src.schemas.yandex_schemas import YandexMusicTestSchema
 
 
 class YandexMusicService(MusicService):
@@ -187,7 +188,7 @@ class YandexMusicService(MusicService):
 
         return session, to_send, data["host"], json.dumps(new_ws_proto)
 
-    async def get_current_track(self, obj: YandexMusicAccountBodySchema) -> TrackBaseInfo | None:
+    async def get_current_track(self, obj: YandexMusicAccountBodySchema | YandexMusicTestSchema) -> TrackBaseInfo | None:
         session, to_send, host, proto = await self.get_preynison(obj.access_token)
         async with session.ws_connect(
             url=f"wss://{host}/ynison_state.YnisonStateService/PutYnisonState",
