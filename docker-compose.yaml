@@ -1,0 +1,47 @@
+services:
+  api:
+    build: .
+    command: ['uv', 'run', 'litestar', '--app', 'src.app:app', 'run']
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: always
+
+  postgres:
+    image: postgres:16.6
+    env_file:
+      - .env
+    environment:
+      TZ: '${TZ}'
+      POSTGRES_DB: '${POSTGRES__DB}'
+      POSTGRES_USER: '${POSTGRES__USER}'
+      POSTGRES_PASSWORD: '${POSTGRES__PASSWORD}'
+    ports:
+      - '${POSTGRES__PORT}:${POSTGRES__PORT}'
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'pg_isready -p $${POSTGRES__PORT} -d $${POSTGRES__DB} -U $${POSTGRES__USER}',
+        ]
+      interval: 5s
+      timeout: 10s
+      retries: 20
+    command: postgres -c 'max_connections=1000' -p ${POSTGRES__PORT}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:alpine
+    command: redis-server --port ${REDIS__PORT} --requirepass ${REDIS__PASSWORD}
+    ports:
+      - '${REDIS__PORT}:${REDIS__PORT}'
+    volumes:
+      - redis_data:/data
+    restart: always
+
+volumes:
+  postgres_data:
+  redis_data:
