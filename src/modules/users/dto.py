@@ -1,12 +1,32 @@
 from uuid import UUID
 
-from msgspec import Struct
+from src.core.dto import BaseStruct
+from src.core.enums import FollowStatusEnum
 
 
-class IUserBase(Struct):
+class IUserSignIn(BaseStruct):
+    email: str
+    password: str
+
+
+class IUserSignUp(BaseStruct):
+    email: str
+    name: str
+    password: str
+
+
+class IUserBase(BaseStruct):
     id: UUID
     name: str
-    avatar_url: str
-    status: str
-    yandex_url: str | None
-    spotify_url: str | None
+    avatar_url: str | None = None
+    status: str | None = None
+    yandex_url: str | None = None
+    spotify_url: str | None = None
+
+
+class IUserRead(BaseStruct):
+    follow_status: FollowStatusEnum
+
+
+class IUsersBase(BaseStruct):
+    users: list[IUserBase]

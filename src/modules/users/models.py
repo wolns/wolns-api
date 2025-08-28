@@ -12,20 +12,25 @@ if TYPE_CHECKING:
 class UserModel(UUIDAuditBase):
     __tablename__ = "users"
 
+    email: Mapped[str] = mapped_column(nullable=False, unique=True)
     name: Mapped[str] = mapped_column(nullable=False)
-    avatar_url: Mapped[str] = mapped_column(nullable=False)
-    status: Mapped[str] = mapped_column(nullable=False)
+    avatar_url: Mapped[str | None] = mapped_column(nullable=True)
+    status: Mapped[str | None] = mapped_column(nullable=True)
     hashed_password: Mapped[str | None] = mapped_column(nullable=True)
 
     listenings: Mapped[List["ListeningModel"]] = relationship(
-        "ListeningModel", back_populates="user"
+        "ListeningModel", back_populates="user", foreign_keys="ListeningModel.user_id"
     )
 
     following: Mapped[List["FollowModel"]] = relationship(
-        "FollowModel", back_populates="from_user"
+        "FollowModel",
+        back_populates="from_user",
+        foreign_keys="FollowModel.from_user_id",
     )
     followers: Mapped[List["FollowModel"]] = relationship(
-        "FollowModel", back_populates="to_user"
+        "FollowModel",
+        back_populates="to_user",
+        foreign_keys="FollowModel.to_user_id",
     )
 
 
@@ -40,5 +45,9 @@ class FollowModel(UUIDAuditBase):
         ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False
     )
 
-    from_user: Mapped["UserModel"] = relationship("UserModel", back_populates="singers")
-    to_user: Mapped["UserModel"] = relationship("UserModel", back_populates="singers")
+    from_user: Mapped["UserModel"] = relationship(
+        "UserModel", back_populates="following", foreign_keys=[from_user_id]
+    )
+    to_user: Mapped["UserModel"] = relationship(
+        "UserModel", back_populates="followers", foreign_keys=[to_user_id]
+    )
