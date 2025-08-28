@@ -15,6 +15,7 @@ class UserModel(UUIDAuditBase):
     name: Mapped[str] = mapped_column(nullable=False)
     avatar_url: Mapped[str] = mapped_column(nullable=False)
     status: Mapped[str] = mapped_column(nullable=False)
+    hashed_password: Mapped[str | None] = mapped_column(nullable=True)
 
     listenings: Mapped[List["ListeningModel"]] = relationship(
         "ListeningModel", back_populates="user"
