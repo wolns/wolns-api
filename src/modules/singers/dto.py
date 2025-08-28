@@ -1,11 +1,10 @@
 from uuid import UUID
 
-from msgspec import Struct
-
 from core.enums import PositionEnum
+from src.core.dto import BaseStruct
 
 
-class ISingerBase(Struct):
+class ISingerBase(BaseStruct):
     id: UUID
     name: str
     url: str

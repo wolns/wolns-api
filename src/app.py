@@ -11,8 +11,7 @@ from litestar.openapi.plugins import SwaggerRenderPlugin
 from src.core.database import alchemy
 from src.core.di import container
 from src.core.exceptions import AppError, app_error_handler, generic_handler
-
-# from src.infrastructure.security import jwt_auth
+from src.core.security import jwt_auth
 from src.modules import controllers
 
 dishka_controllers = DishkaRouter("", route_handlers=controllers)
@@ -22,7 +21,7 @@ app: litestar.Litestar = Litestar(
     route_handlers=[dishka_controllers],
     # dependencies={"current_player_id": Provide(get_current_player_id)},
     exception_handlers={AppError: app_error_handler, 500: generic_handler},
-    # on_app_init=[jwt_auth.on_app_init],
+    on_app_init=[jwt_auth.on_app_init],
     cors_config=CORSConfig(
         allow_origins=["*"],
         allow_methods=["*"],

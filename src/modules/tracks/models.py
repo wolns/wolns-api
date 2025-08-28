@@ -24,6 +24,7 @@ class TrackModel(UUIDAuditBase):
         back_populates="track",
         cascade="all, delete-orphan",
         lazy="selectin",
+        foreign_keys="TrackSingerModel.track_id",
     )
 
     listenings: Mapped[List["ListeningModel"]] = relationship(
@@ -31,6 +32,7 @@ class TrackModel(UUIDAuditBase):
         back_populates="track",
         cascade="all, delete-orphan",
         lazy="selectin",
+        foreign_keys="ListeningModel.track_id",
     )
 
 
@@ -47,8 +49,14 @@ class TrackSingerModel(UUIDAuditBase):
         ForeignKey("singers.id", ondelete="CASCADE"), index=True, nullable=False
     )
 
-    track: Mapped["TrackModel"] = relationship("TrackModel", back_populates="singers")
-    singer: Mapped["SingerModel"] = relationship("SingerModel", lazy="selectin")
+    track: Mapped["TrackModel"] = relationship(
+        "TrackModel",
+        back_populates="singers",
+    )
+    singer: Mapped["SingerModel"] = relationship(
+        "SingerModel",
+        lazy="selectin",
+    )
 
 
 class ListeningModel(UUIDAuditBase):
@@ -62,8 +70,11 @@ class ListeningModel(UUIDAuditBase):
     )
 
     track: Mapped["TrackModel"] = relationship(
-        "TrackModel", back_populates="listenings"
+        "TrackModel",
+        back_populates="listenings",
     )
     user: Mapped["UserModel"] = relationship(
-        "UserModel", lazy="selectin", back_populates="listenings"
+        "UserModel",
+        lazy="selectin",
+        back_populates="listenings",
     )

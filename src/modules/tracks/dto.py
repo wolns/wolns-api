@@ -1,18 +1,27 @@
+from datetime import datetime
 from uuid import UUID
 
-from msgspec import Struct
+from src.core.dto import BaseStruct
+from src.core.enums import PlatformEnum
 
-from core.enums import PositionEnum
 
-
-class ISingerBase(Struct):
+class ITrackBase(BaseStruct):
     id: UUID
     name: str
+    singer: str
     url: str
-    image_url: str
+    duration: int
 
 
-class ISingerStats(ISingerBase):
-    place: int
-    position: PositionEnum
-    hours: int
+class ITrackUser(ITrackBase):
+    is_listening: bool
+    platform: PlatformEnum
+    listened_at: datetime
+
+
+class ITracksBase(BaseStruct):
+    tracks: list[ITrackBase]
+
+
+class ITracksUser(BaseStruct):
+    tracks: list[ITrackUser]
