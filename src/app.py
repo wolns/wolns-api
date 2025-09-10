@@ -19,7 +19,6 @@ dishka_controllers = DishkaRouter("", route_handlers=controllers)
 app: litestar.Litestar = Litestar(
     plugins=[alchemy],
     route_handlers=[dishka_controllers],
-    # dependencies={"current_player_id": Provide(get_current_player_id)},
     exception_handlers={AppError: app_error_handler, 500: generic_handler},
     on_app_init=[jwt_auth.on_app_init],
     cors_config=CORSConfig(
