@@ -1,7 +1,7 @@
 from uuid import UUID
 
-from core.enums import PositionEnum
 from src.core.dto import BaseStruct
+from src.core.enums import PositionEnum
 
 
 class ISingerBase(BaseStruct):
