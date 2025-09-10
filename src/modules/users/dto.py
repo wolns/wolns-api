@@ -2,6 +2,7 @@ from uuid import UUID
 
 from src.core.dto import BaseStruct
 from src.core.enums import FollowStatusEnum
+from src.modules.singers.dto import ISingerStats
 
 
 class IUserSignIn(BaseStruct):
@@ -30,3 +31,7 @@ class IUserRead(BaseStruct):
 
 class IUsersBase(BaseStruct):
     users: list[IUserBase]
+
+
+class ISingersUser(BaseStruct):
+    singers: list[ISingerStats]
